@@ -2,40 +2,31 @@ package main
 
 import (
     "io"
-    "io/ioutil"
-    "bytes"
     "net/http"
     "log"
-    "github.com/hoisie/mustache"
     "fmt"
+    "controllers"
 )
 
-func ReadAll(r io.Reader) string {
-    buf := new(bytes.Buffer)
-    buf.ReadFrom(r)
-    return buf.String()
-}
-
-func HelloServer(w http.ResponseWriter, req *http.Request) {
-    var context = map[string]interface{}{}
-    str := mustache.RenderFile("templates/hello.html", context)
-    if req.Method == "POST" {
-        file, _, e := req.FormFile("file")
-        if e != nil {
-            fmt.Printf("Error:%s\n", e)
-        }
-        buf := new(bytes.Buffer)
-        buf.ReadFrom(file)
-        e = ioutil.WriteFile("test.jpg", buf.Bytes(), 0660)
-        if e != nil {
-            fmt.Printf("Error writing:%s\n", e)
+func Serve(c controllers.Controller) func(http.ResponseWriter, *http.Request) {
+    return func(w http.ResponseWriter, req *http.Request) {
+        response := c.Handler(req)
+        if response.Status == http.StatusOK {
+            io.WriteString(w, response.Body)
+        } else if response.Status == http.StatusMovedPermanently {
+            http.Redirect(w, req, response.Body, response.Status)
+        } else {
+            http.Error(w, response.Body, response.Status)
+            fmt.Printf("Response not 200")
         }
     }
-    io.WriteString(w, str)
 }
 
 func main() {
-    http.HandleFunc("/hello", HelloServer)
+    controllers := controllers.GetControllers()
+    for _,c := range controllers {
+        http.HandleFunc("/hello", Serve(c))
+    }
     err := http.ListenAndServe(":12345", nil)
     if err != nil {
         log.Fatal("ListenAndServe: ", err)
